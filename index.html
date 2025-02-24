@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Node and Link Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="nodeModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <form id="nodeForm">
+                <label for="nodeLabel">Label:</label>
+                <input type="text" id="nodeLabel"><br>
+                <label for="nodeRemarks">Remarks:</label>
+                <textarea id="nodeRemarks"></textarea><br>
+                <button type="submit">Add Node</button>
+            </form>
+        </div>
+    </div>
+    <div id="linkModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <form id="linkForm">
+                <label for="linkSource">Source Node ID:</label>
+                <input type="number" id="linkSource"><br>
+                <label for="linkTarget">Target Node ID:</label>
+                <input type="number" id="linkTarget"><br>
+                 <label for="linkLabel">Label:</label>
+                <input type="text" id="linkLabel"><br>
+                <label for="linkRemarks">Remarks:</label>
+                <textarea id="linkRemarks"></textarea><br>
+                <button type="submit">Add Link</button>
+            </form>
+        </div>
+    </div>
+    <div id="contextMenu" class="context-menu">
+        <button id="editButton">Edit</button>
+        <button id="deleteButton">Delete</button>
+    </div>
+    <button id="saveButton">Save</button>
+    <button id="loadButton">Load</button>
+    <script src="app.js"></script>
+</body>
+</html>
