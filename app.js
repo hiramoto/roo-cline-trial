@@ -1,415 +1,609 @@
-// Data structures
-let nodes = [];
-let links = [];
+class NodeLinkEditor {
+    constructor() {
+        this.canvas = document.getElementById('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.nodes = [];
+        this.links = [];
+        this.selectedNode = null;
+        this.selectedLink = null;
+        this.draggedNode = null;
+        this.linkSource = null;
+        this.scale = 1;
+        this.offset = { x: 0, y: 0 };
+        this.lastMousePos = { x: 0, y: 0 };
+        this.isPanning = false;
+        this.newNodePos = null;
+        this.isCreatingLink = false;
 
-// Local storage keys
-const NODES_KEY = 'nodes';
-const LINKS_KEY = 'links';
-
-// Canvas element
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-
-// UI elements
-const nodeModal = document.getElementById('nodeModal');
-const linkModal = document.getElementById('linkModal');
-const nodeForm = document.getElementById('nodeForm');
-const linkForm = document.getElementById('linkForm');
-const nodeLabelInput = document.getElementById('nodeLabel');
-const nodeRemarksInput = document.getElementById('nodeRemarks');
-const linkSourceInput = document.getElementById('linkSource');
-const linkTargetInput = document.getElementById('linkTarget');
-const linkLabelInput = document.getElementById('linkLabel');
-const linkRemarksInput = document.getElementById('linkRemarks');
-const saveButton = document.getElementById('saveButton');
-const loadButton = document.getElementById('loadButton');
-
-// Canvas state
-let isDragging = false;
-let selectedNode = null;
-let offsetX, offsetY;
-let zoomLevel = 1;
-let panX = 0;
-let panY = 0;
-let nextNodeId = 1;
-
-// Function to save data to local storage
-function saveToLocalStorage() {
-  localStorage.setItem(NODES_KEY, JSON.stringify(nodes));
-  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
-}
-
-// Function to load data from local storage
-function loadFromLocalStorage() {
-  const storedNodes = localStorage.getItem(NODES_KEY);
-  const storedLinks = localStorage.getItem(LINKS_KEY);
-  if (storedNodes) {
-    nodes = JSON.parse(storedNodes);
-  }
-  if (storedLinks) {
-    links = JSON.parse(storedLinks);
-  }
-}
-
-// Function to draw nodes on the canvas
-function drawNodes() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    nodes.forEach(node => {
-        const textWidth = ctx.measureText(node.label).width;
-        const textHeight = 16; // Approximate text height
-        const padding = 10;
-        const rectWidth = Math.max(textWidth + 2 * padding, 50);
-        const rectHeight = textHeight + 2 * padding;
-
-        ctx.fillStyle = 'lightblue';
-        ctx.fillRect(node.x - rectWidth / 2, node.y - rectHeight / 2, rectWidth, rectHeight);
-        ctx.fillStyle = 'black';
-        ctx.font = '16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(node.label, node.x, node.y);
-    });
-}
-
-// Function to draw links on the canvas
-function drawLinks() {
-    links.forEach(link => {
-        const sourceNode = nodes.find(node => node.id === link.source_id);
-        const targetNode = nodes.find(node => node.id === link.target_id);
-
-        if (sourceNode && targetNode) {
-            ctx.beginPath();
-            ctx.moveTo(sourceNode.x, sourceNode.y);
-            ctx.lineTo(targetNode.x, targetNode.y);
-            ctx.strokeStyle = 'black';
-            ctx.stroke();
-
-            // Draw link label
-            if (link.label) {
-                const midX = (sourceNode.x + targetNode.x) / 2;
-                const midY = (sourceNode.y + targetNode.y) / 2;
-                ctx.fillStyle = 'black';
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(link.label, midX, midY - 5);
-            }
-        }
-    });
-}
-
-// Function to handle canvas clicks
-let selectedNodesForLink = [];
-let nextLinkId = 1;
-function handleCanvasClick(event) {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
-    let clickedNode = null;
-    for (const node of nodes) {
-        const textWidth = ctx.measureText(node.label).width;
-        const textHeight = 16;
-        const padding = 10;
-        const rectWidth = Math.max(textWidth + 2 * padding, 50);
-        const rectHeight = textHeight + 2 * padding;
-
-        if (x >= node.x - rectWidth / 2 && x <= node.x + rectWidth / 2 &&
-            y >= node.y - rectHeight / 2 && y <= node.y + rectHeight / 2) {
-            clickedNode = node;
-            break;
-        }
+        this.setupCanvas();
+        this.loadFromLocalStorage();
+        this.setupEventListeners();
     }
 
-    if (clickedNode) {
-        selectedNodesForLink.push(clickedNode);
-        if (selectedNodesForLink.length === 2) {
-            linkModal.style.display = 'block';
-            linkSourceInput.value = selectedNodesForLink[0].id;
-            linkTargetInput.value = selectedNodesForLink[1].id;
-            linkLabelInput.value = '';
-            linkRemarksInput.value = '';
+    setupCanvas() {
+        const resize = () => {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight - 50; // Account for toolbar
+            this.draw();
+        };
+        window.addEventListener('resize', resize);
+        resize();
+    }
 
-            linkForm.onsubmit = function(e) {
-                e.preventDefault();
-                const sourceId = parseInt(linkSourceInput.value);
-                const targetId = parseInt(linkTargetInput.value);
-                const label = linkLabelInput.value;
-                const remarks = linkRemarksInput.value;
+    setupEventListeners() {
+        // Canvas events
+        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('dblclick', this.handleDoubleClick.bind(this));
+        this.canvas.addEventListener('wheel', this.handleWheel.bind(this));
 
-                const newLink = {
-                    id: nextLinkId++,
-                    source_id: sourceId,
-                    target_id: targetId,
-                    label: label,
-                    remarks: remarks
-                };
-                links.push(newLink);
-                saveToLocalStorage();
-                linkModal.style.display = 'none';
-                selectedNodesForLink = [];
-                drawNodes();
-                drawLinks();
-            };
-        }
-    } else {
-        nodeModal.style.display = 'block';
-        nodeLabelInput.value = '';
-        nodeRemarksInput.value = '';
+        // Modal events
+        document.querySelectorAll('.modal .close').forEach(closeBtn => {
+            closeBtn.addEventListener('click', () => {
+                closeBtn.closest('.modal').style.display = 'none';
+                this.selectedNode = null;
+                this.selectedLink = null;
+                this.linkSource = null;
+                this.newNodePos = null;
+            });
+        });
 
-        nodeForm.onsubmit = function(e) {
+        // Form submissions
+        const nodeForm = document.getElementById('nodeForm');
+        nodeForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            const label = nodeLabelInput.value;
-            const remarks = nodeRemarksInput.value;
+            const label = document.getElementById('nodeLabel').value.trim();
+            const remarks = document.getElementById('nodeRemarks').value.trim();
 
-            const newNode = {
-                id: nextNodeId++,
-                label: label,
-                x: x,
-                y: y,
-                remarks: remarks
-            };
-            nodes.push(newNode);
-            saveToLocalStorage();
-            nodeModal.style.display = 'none';
-            drawNodes();
-            drawLinks();
+            if (!label) return; // Don't proceed if label is empty
+
+            if (this.selectedNode) {
+                // Edit existing node
+                this.selectedNode.label = label;
+                this.selectedNode.remarks = remarks;
+            } else if (this.newNodePos) {
+                // Create new node
+                const newNode = {
+                    id: Date.now(),
+                    label,
+                    remarks,
+                    x: this.newNodePos.x,
+                    y: this.newNodePos.y
+                };
+                this.nodes.push(newNode);
+                this.newNodePos = null;
+            }
+
+            document.getElementById('nodeModal').style.display = 'none';
+            nodeForm.reset();
+            this.selectedNode = null;
+            this.saveToLocalStorage();
+            this.draw();
+        });
+
+        const linkForm = document.getElementById('linkForm');
+        linkForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const label = document.getElementById('linkLabel').value.trim();
+            const remarks = document.getElementById('linkRemarks').value.trim();
+
+            if (this.selectedLink) {
+                // Edit existing link
+                this.selectedLink.label = label;
+                this.selectedLink.remarks = remarks;
+            } else if (this.linkSource && this.selectedNode) {
+                // Create new link
+                const newLink = {
+                    id: Date.now(),
+                    source_id: this.linkSource.id,
+                    target_id: this.selectedNode.id,
+                    label,
+                    remarks
+                };
+                this.links.push(newLink);
+                this.linkSource = null;
+                this.selectedNode = null;
+                this.isCreatingLink = false;
+                document.getElementById('createLinkButton').classList.remove('active');
+                this.showStatus('');
+            }
+
+            document.getElementById('linkModal').style.display = 'none';
+            linkForm.reset();
+            this.selectedLink = null;
+            this.saveToLocalStorage();
+            this.draw();
+        });
+
+        // Context menu
+        document.getElementById('editButton').addEventListener('click', this.handleEdit.bind(this));
+        document.getElementById('deleteButton').addEventListener('click', this.handleDelete.bind(this));
+
+        // Toolbar events
+        document.getElementById('saveButton').addEventListener('click', this.saveToFile.bind(this));
+        document.getElementById('loadButton').addEventListener('click', this.loadFromFile.bind(this));
+        document.getElementById('createLinkButton').addEventListener('click', () => {
+            this.isCreatingLink = !this.isCreatingLink;
+            document.getElementById('createLinkButton').classList.toggle('active');
+            if (this.isCreatingLink) {
+                this.showStatus('Select source node');
+            } else {
+                this.showStatus('');
+                this.linkSource = null;
+                this.selectedNode = null;
+            }
+            this.draw();
+        });
+        document.getElementById('nodeShape').addEventListener('change', () => this.draw());
+        document.getElementById('linkStyle').addEventListener('change', () => this.draw());
+        document.getElementById('zoomIn').addEventListener('click', () => this.zoom(1.1));
+        document.getElementById('zoomOut').addEventListener('click', () => this.zoom(0.9));
+        document.getElementById('resetZoom').addEventListener('click', () => {
+            this.scale = 1;
+            this.offset = { x: 0, y: 0 };
+            this.draw();
+        });
+
+        // Hide context menu on click outside
+        document.addEventListener('click', (e) => {
+            const contextMenu = document.getElementById('contextMenu');
+            if (!contextMenu.contains(e.target)) {
+                contextMenu.style.display = 'none';
+            }
+        });
+    }
+
+    showStatus(message) {
+        const status = document.getElementById('status');
+        status.textContent = message;
+        status.classList.toggle('visible', message !== '');
+    }
+
+    // Coordinate transformations
+    toScreenCoords(x, y) {
+        return {
+            x: (x + this.offset.x) * this.scale,
+            y: (y + this.offset.y) * this.scale
         };
     }
-}
 
-// Function to handle node dragging
-function handleNodeDrag(event) {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    toWorldCoords(x, y) {
+        return {
+            x: x / this.scale - this.offset.x,
+            y: y / this.scale - this.offset.y
+        };
+    }
 
-    if (event.type === 'mousedown') {
-        for (const node of nodes) {
-            const textWidth = ctx.measureText(node.label).width;
-            const textHeight = 16;
-            const padding = 10;
-            const rectWidth = Math.max(textWidth + 2 * padding, 50);
-            const rectHeight = textHeight + 2 * padding;
+    // Drawing functions
+    draw() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Draw links
+        this.links.forEach(link => this.drawLink(link));
+        
+        // Draw nodes
+        this.nodes.forEach(node => this.drawNode(node));
 
-            if (x >= node.x - rectWidth / 2 && x <= node.x + rectWidth / 2 &&
-                y >= node.y - rectHeight / 2 && y <= node.y + rectHeight / 2) {
-                isDragging = true;
-                selectedNode = node;
-                offsetX = x - node.x;
-                offsetY = y - node.y;
+        // Draw link preview if creating a link
+        if (this.linkSource && this.lastMousePos) {
+            const sourcePos = this.toScreenCoords(this.linkSource.x, this.linkSource.y);
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.moveTo(sourcePos.x, sourcePos.y);
+            this.ctx.lineTo(this.lastMousePos.x, this.lastMousePos.y);
+            this.ctx.strokeStyle = '#999';
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+    }
+
+    drawNode(node) {
+        const { x, y } = this.toScreenCoords(node.x, node.y);
+        const nodeShape = document.getElementById('nodeShape').value;
+        const size = 60 * this.scale;
+
+        this.ctx.save();
+        this.ctx.fillStyle = node === this.selectedNode || node === this.linkSource ? '#e0e0ff' : '#ffffff';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 2;
+
+        switch (nodeShape) {
+            case 'circle':
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
                 break;
+            case 'triangle':
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y - size / 2);
+                this.ctx.lineTo(x + size / 2, y + size / 2);
+                this.ctx.lineTo(x - size / 2, y + size / 2);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                break;
+            default: // rectangle
+                this.ctx.fillRect(x - size / 2, y - size / 2, size, size);
+                this.ctx.strokeRect(x - size / 2, y - size / 2, size, size);
+        }
+
+        // Draw label
+        this.ctx.fillStyle = '#000000';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.font = `${12 * this.scale}px Arial`;
+        this.ctx.fillText(node.label, x, y);
+
+        this.ctx.restore();
+    }
+
+    drawLink(link) {
+        const source = this.nodes.find(n => n.id === link.source_id);
+        const target = this.nodes.find(n => n.id === link.target_id);
+        if (!source || !target) return;
+
+        const sourcePos = this.toScreenCoords(source.x, source.y);
+        const targetPos = this.toScreenCoords(target.x, target.y);
+        const linkStyle = document.getElementById('linkStyle').value;
+
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.moveTo(sourcePos.x, sourcePos.y);
+        this.ctx.lineTo(targetPos.x, targetPos.y);
+
+        this.ctx.strokeStyle = link === this.selectedLink ? '#0000ff' : '#000000';
+        this.ctx.lineWidth = 2;
+
+        switch (linkStyle) {
+            case 'dashed':
+                this.ctx.setLineDash([5, 5]);
+                break;
+            case 'dotted':
+                this.ctx.setLineDash([2, 2]);
+                break;
+        }
+
+        this.ctx.stroke();
+
+        // Draw label if exists
+        if (link.label) {
+            const midX = (sourcePos.x + targetPos.x) / 2;
+            const midY = (sourcePos.y + targetPos.y) / 2;
+            this.ctx.fillStyle = '#000000';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.font = `${12 * this.scale}px Arial`;
+            this.ctx.fillText(link.label, midX, midY);
+        }
+
+        this.ctx.restore();
+    }
+
+    // Event handlers
+    handleMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const worldPos = this.toWorldCoords(mouseX, mouseY);
+
+        if (e.button === 1 || (e.button === 0 && e.altKey)) { // Middle button or Alt+Left click
+            this.isPanning = true;
+            this.lastMousePos = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
+        // Check if clicked on a node
+        const clickedNode = this.nodes.find(node => {
+            const nodePos = this.toScreenCoords(node.x, node.y);
+            const dx = nodePos.x - mouseX;
+            const dy = nodePos.y - mouseY;
+            return Math.sqrt(dx * dx + dy * dy) < 30 * this.scale;
+        });
+
+        if (clickedNode) {
+            if (e.button === 0) { // Left click
+                if (this.isCreatingLink) {
+                    if (!this.linkSource) {
+                        this.linkSource = clickedNode;
+                        this.showStatus('Select target node');
+                    } else if (this.linkSource !== clickedNode) {
+                        this.selectedNode = clickedNode;
+                        document.getElementById('linkModal').style.display = 'block';
+                    }
+                } else {
+                    this.draggedNode = clickedNode;
+                }
+            } else if (e.button === 2) { // Right click
+                this.selectedNode = clickedNode;
+                this.showContextMenu(e.clientX, e.clientY);
+            }
+        } else {
+            // Check if clicked on a link
+            this.selectedLink = this.links.find(link => {
+                const source = this.nodes.find(n => n.id === link.source_id);
+                const target = this.nodes.find(n => n.id === link.target_id);
+                if (!source || !target) return false;
+
+                const sourcePos = this.toScreenCoords(source.x, source.y);
+                const targetPos = this.toScreenCoords(target.x, target.y);
+                return this.isPointNearLine(mouseX, mouseY, sourcePos, targetPos);
+            });
+
+            if (this.selectedLink && e.button === 2) {
+                this.showContextMenu(e.clientX, e.clientY);
+            } else if (!this.selectedLink && e.button === 0 && !this.isCreatingLink) {
+                // Create new node
+                this.newNodePos = worldPos;
+                document.getElementById('nodeModal').style.display = 'block';
             }
         }
-    } else if (event.type === 'mousemove') {
-        if (isDragging && selectedNode) {
-            selectedNode.x = x - offsetX;
-            selectedNode.y = y - offsetY;
-            drawNodes();
-            drawLinks();
-        }
-    } else if (event.type === 'mouseup') {
-        if (isDragging && selectedNode) {
-            isDragging = false;
-            selectedNode = null;
-            saveToLocalStorage();
-        }
-    }
-}
 
-// Function to handle node editing
-function handleNodeEdit(node) {
-    nodeModal.style.display = 'block';
-    nodeLabelInput.value = node.label;
-    nodeRemarksInput.value = node.remarks;
-
-    nodeForm.onsubmit = function(e) {
-        e.preventDefault();
-        node.label = nodeLabelInput.value;
-        node.remarks = nodeRemarksInput.value;
-        saveToLocalStorage();
-        nodeModal.style.display = 'none';
-        drawNodes();
-        drawLinks();
-    };
-}
-
-// Function to handle link editing
-function handleLinkEdit(link) {
-    linkModal.style.display = 'block';
-    linkSourceInput.value = link.source_id;
-    linkTargetInput.value = link.target_id;
-    linkLabelInput.value = link.label;
-    linkRemarksInput.value = link.remarks;
-
-    linkForm.onsubmit = function(e) {
-        e.preventDefault();
-        link.source_id = parseInt(linkSourceInput.value);
-        link.target_id = parseInt(linkTargetInput.value);
-        link.label = linkLabelInput.value;
-        link.remarks = linkRemarksInput.value;
-        saveToLocalStorage();
-        linkModal.style.display = 'none';
-        drawNodes();
-        drawLinks();
-    };
-}
-
-// Function to handle node deletion
-function handleNodeDelete(node) {
-    nodes = nodes.filter(n => n.id !== node.id);
-    links = links.filter(link => link.source_id !== node.id && link.target_id !== node.id);
-    saveToLocalStorage();
-    drawNodes();
-    drawLinks();
-}
-
-// Function to handle link deletion
-function handleLinkDelete(link) {
-    links = links.filter(l => l.id !== link.id);
-    saveToLocalStorage();
-    drawNodes();
-    drawLinks();
-}
-
-// Context menu
-const contextMenu = document.getElementById('contextMenu');
-const editButton = document.getElementById('editButton');
-const deleteButton = document.getElementById('deleteButton');
-let selectedElement = null;
-
-canvas.addEventListener('contextmenu', function(event) {
-    event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
-    let clickedNode = null;
-    for (const node of nodes) {
-        const textWidth = ctx.measureText(node.label).width;
-        const textHeight = 16;
-        const padding = 10;
-        const rectWidth = Math.max(textWidth + 2 * padding, 50);
-        const rectHeight = textHeight + 2 * padding;
-
-        if (x >= node.x - rectWidth / 2 && x <= node.x + rectWidth / 2 &&
-            y >= node.y - rectHeight / 2 && y <= node.y + rectHeight / 2) {
-            clickedNode = node;
-            break;
-        }
+        this.draw();
     }
 
-    let clickedLink = null;
-    for (const link of links) {
-        const sourceNode = nodes.find(node => node.id === link.source_id);
-        const targetNode = nodes.find(node => node.id === link.target_id);
+    handleMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
-        if (sourceNode && targetNode) {
-            const midX = (sourceNode.x + targetNode.x) / 2;
-            const midY = (sourceNode.y + targetNode.y) / 2;
-            const dx = x - midX;
-            const dy = y - midY;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance < 10) {
-                clickedLink = link;
-                break;
+        if (this.isPanning) {
+            const dx = e.clientX - this.lastMousePos.x;
+            const dy = e.clientY - this.lastMousePos.y;
+            this.offset.x += dx / this.scale;
+            this.offset.y += dy / this.scale;
+            this.lastMousePos = { x: e.clientX, y: e.clientY };
+            this.draw();
+            return;
+        }
+
+        if (this.draggedNode) {
+            const worldPos = this.toWorldCoords(mouseX, mouseY);
+            this.draggedNode.x = worldPos.x;
+            this.draggedNode.y = worldPos.y;
+            this.draw();
+        }
+
+        if (this.linkSource) {
+            this.lastMousePos = { x: mouseX, y: mouseY };
+            this.draw();
+        }
+
+        // Update tooltip
+        const tooltip = document.getElementById('tooltip');
+        const hoveredNode = this.nodes.find(node => {
+            const nodePos = this.toScreenCoords(node.x, node.y);
+            const dx = nodePos.x - mouseX;
+            const dy = nodePos.y - mouseY;
+            return Math.sqrt(dx * dx + dy * dy) < 30 * this.scale;
+        });
+
+        if (hoveredNode && hoveredNode.remarks) {
+            tooltip.style.display = 'block';
+            tooltip.style.left = `${e.clientX + 10}px`;
+            tooltip.style.top = `${e.clientY + 10}px`;
+            tooltip.textContent = hoveredNode.remarks;
+        } else {
+            const hoveredLink = this.links.find(link => {
+                const source = this.nodes.find(n => n.id === link.source_id);
+                const target = this.nodes.find(n => n.id === link.target_id);
+                if (!source || !target) return false;
+
+                const sourcePos = this.toScreenCoords(source.x, source.y);
+                const targetPos = this.toScreenCoords(target.x, target.y);
+                return this.isPointNearLine(mouseX, mouseY, sourcePos, targetPos);
+            });
+
+            if (hoveredLink && hoveredLink.remarks) {
+                tooltip.style.display = 'block';
+                tooltip.style.left = `${e.clientX + 10}px`;
+                tooltip.style.top = `${e.clientY + 10}px`;
+                tooltip.textContent = hoveredLink.remarks;
+            } else {
+                tooltip.style.display = 'none';
             }
         }
     }
 
-    if (clickedNode) {
-        selectedElement = clickedNode;
-    } else if (clickedLink) {
-        selectedElement = clickedLink;
-    } else {
-        selectedElement = null;
-        contextMenu.style.display = 'none';
-        return;
+    handleMouseUp() {
+        if (this.draggedNode) {
+            this.saveToLocalStorage();
+        }
+        this.draggedNode = null;
+        this.isPanning = false;
     }
 
-    contextMenu.style.display = 'block';
-    contextMenu.style.left = event.clientX + 'px';
-    contextMenu.style.top = event.clientY + 'px';
-});
+    handleDoubleClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
-editButton.addEventListener('click', function() {
-    contextMenu.style.display = 'none';
-    if (selectedElement) {
-        if (selectedElement.label) {
-            handleNodeEdit(selectedElement);
+        // Check if double-clicked on a node or link
+        const clickedNode = this.nodes.find(node => {
+            const nodePos = this.toScreenCoords(node.x, node.y);
+            const dx = nodePos.x - mouseX;
+            const dy = nodePos.y - mouseY;
+            return Math.sqrt(dx * dx + dy * dy) < 30 * this.scale;
+        });
+
+        if (clickedNode) {
+            this.selectedNode = clickedNode;
+            this.editNode();
         } else {
-            handleLinkEdit(selectedElement);
+            const clickedLink = this.links.find(link => {
+                const source = this.nodes.find(n => n.id === link.source_id);
+                const target = this.nodes.find(n => n.id === link.target_id);
+                if (!source || !target) return false;
+
+                const sourcePos = this.toScreenCoords(source.x, source.y);
+                const targetPos = this.toScreenCoords(target.x, target.y);
+                return this.isPointNearLine(mouseX, mouseY, sourcePos, targetPos);
+            });
+
+            if (clickedLink) {
+                this.selectedLink = clickedLink;
+                this.editLink();
+            }
         }
     }
-});
 
-deleteButton.addEventListener('click', function() {
-    contextMenu.style.display = 'none';
-    if (selectedElement) {
-         if (selectedElement.label) {
-            handleNodeDelete(selectedElement);
-        } else {
-            handleLinkDelete(selectedElement);
+    handleWheel(e) {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const worldPos = this.toWorldCoords(mouseX, mouseY);
+
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        this.scale *= zoomFactor;
+
+        // Adjust offset to zoom toward mouse position
+        this.offset.x = mouseX / this.scale - worldPos.x;
+        this.offset.y = mouseY / this.scale - worldPos.y;
+
+        this.draw();
+    }
+
+    // Context menu handlers
+    showContextMenu(x, y) {
+        const menu = document.getElementById('contextMenu');
+        menu.style.display = 'block';
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+    }
+
+    handleEdit() {
+        document.getElementById('contextMenu').style.display = 'none';
+        if (this.selectedNode) {
+            this.editNode();
+        } else if (this.selectedLink) {
+            this.editLink();
         }
     }
-});
 
-// Function to handle saving to file
-function handleSaveToFile() {
-    const data = {
-        nodes: nodes,
-        links: links
-    };
-    const json = JSON.stringify(data);
-    const blob = new Blob([json], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'node_link_config.json';
-    a.click();
-    URL.revokeObjectURL(url);
-}
+    handleDelete() {
+        document.getElementById('contextMenu').style.display = 'none';
+        if (this.selectedNode) {
+            this.nodes = this.nodes.filter(n => n !== this.selectedNode);
+            this.links = this.links.filter(l => 
+                l.source_id !== this.selectedNode.id && 
+                l.target_id !== this.selectedNode.id
+            );
+            this.selectedNode = null;
+        } else if (this.selectedLink) {
+            this.links = this.links.filter(l => l !== this.selectedLink);
+            this.selectedLink = null;
+        }
+        this.saveToLocalStorage();
+        this.draw();
+    }
 
-// Function to handle loading from file
-function handleLoadFromFile() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
+    // Helper functions
+    editNode() {
+        document.getElementById('nodeModalTitle').textContent = 'Edit Node';
+        document.getElementById('nodeLabel').value = this.selectedNode.label;
+        document.getElementById('nodeRemarks').value = this.selectedNode.remarks || '';
+        document.getElementById('nodeModal').style.display = 'block';
+    }
 
-    input.onchange = e => {
-        const file = e.target.files[0];
-        if (!file) return;
+    editLink() {
+        document.getElementById('linkModalTitle').textContent = 'Edit Link';
+        document.getElementById('linkLabel').value = this.selectedLink.label || '';
+        document.getElementById('linkRemarks').value = this.selectedLink.remarks || '';
+        document.getElementById('linkModal').style.display = 'block';
+    }
 
-        const reader = new FileReader();
-        reader.onload = event => {
-            try {
+    isPointNearLine(x, y, start, end) {
+        const lineLength = Math.sqrt(
+            Math.pow(end.x - start.x, 2) + 
+            Math.pow(end.y - start.y, 2)
+        );
+        
+        const distance = Math.abs(
+            (end.y - start.y) * x -
+            (end.x - start.x) * y +
+            end.x * start.y -
+            end.y * start.x
+        ) / lineLength;
+
+        return distance < 5 &&
+            x >= Math.min(start.x, end.x) - 5 &&
+            x <= Math.max(start.x, end.x) + 5 &&
+            y >= Math.min(start.y, end.y) - 5 &&
+            y <= Math.max(start.y, end.y) + 5;
+    }
+
+    zoom(factor) {
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const worldCenter = this.toWorldCoords(centerX, centerY);
+        
+        this.scale *= factor;
+        
+        this.offset.x = centerX / this.scale - worldCenter.x;
+        this.offset.y = centerY / this.scale - worldCenter.y;
+        
+        this.draw();
+    }
+
+    // Storage functions
+    saveToLocalStorage() {
+        localStorage.setItem('nodes', JSON.stringify(this.nodes));
+        localStorage.setItem('links', JSON.stringify(this.links));
+    }
+
+    loadFromLocalStorage() {
+        const nodes = localStorage.getItem('nodes');
+        const links = localStorage.getItem('links');
+        
+        if (nodes) this.nodes = JSON.parse(nodes);
+        if (links) this.links = JSON.parse(links);
+        
+        this.draw();
+    }
+
+    saveToFile() {
+        const data = {
+            nodes: this.nodes,
+            links: this.links
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'node-link-config.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    loadFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => {
                 const data = JSON.parse(event.target.result);
-                nodes = data.nodes;
-                links = data.links;
-                saveToLocalStorage();
-                drawNodes();
-                drawLinks();
-            } catch (error) {
-                console.error('Error parsing JSON file:', error);
-                alert('Error loading file. Please ensure it is a valid JSON file.');
-            }
+                this.nodes = data.nodes;
+                this.links = data.links;
+                this.saveToLocalStorage();
+                this.draw();
+            };
+            reader.readAsText(file);
         };
-        reader.readAsText(file);
-    };
-    input.click();
+        input.click();
+    }
 }
 
-// Event listeners
-canvas.addEventListener('click', handleCanvasClick);
-canvas.addEventListener('mousedown', handleNodeDrag);
-canvas.addEventListener('mousemove', handleNodeDrag);
-canvas.addEventListener('mouseup', handleNodeDrag);
-saveButton.addEventListener('click', handleSaveToFile);
-loadButton.addEventListener('click', handleLoadFromFile);
+// Prevent context menu on right click
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Load data from local storage on page load
-loadFromLocalStorage();
-
-// Initial draw
-drawNodes();
-drawLinks();
+// Initialize the editor when the page loads
+window.addEventListener('load', () => {
+    new NodeLinkEditor();
+});
