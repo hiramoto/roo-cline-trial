@@ -7,41 +7,66 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="toolbar">
+        <button id="saveButton">Save</button>
+        <button id="loadButton">Load</button>
+        <button id="createLinkButton">Create Link</button>
+        <select id="nodeShape">
+            <option value="rectangle">Rectangle</option>
+            <option value="circle">Circle</option>
+            <option value="triangle">Triangle</option>
+        </select>
+        <select id="linkStyle">
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+        </select>
+        <div class="zoom-controls">
+            <button id="zoomIn">+</button>
+            <button id="zoomOut">-</button>
+            <button id="resetZoom">Reset</button>
+        </div>
+    </div>
+
     <canvas id="canvas"></canvas>
+
     <div id="nodeModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
+            <h2 id="nodeModalTitle">Add Node</h2>
             <form id="nodeForm">
                 <label for="nodeLabel">Label:</label>
-                <input type="text" id="nodeLabel"><br>
+                <input type="text" id="nodeLabel" required><br>
                 <label for="nodeRemarks">Remarks:</label>
                 <textarea id="nodeRemarks"></textarea><br>
-                <button type="submit">Add Node</button>
+                <button type="submit">Save</button>
             </form>
         </div>
     </div>
+
     <div id="linkModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
+            <h2 id="linkModalTitle">Add Link</h2>
             <form id="linkForm">
-                <label for="linkSource">Source Node ID:</label>
-                <input type="number" id="linkSource"><br>
-                <label for="linkTarget">Target Node ID:</label>
-                <input type="number" id="linkTarget"><br>
-                 <label for="linkLabel">Label:</label>
+                <label for="linkLabel">Label:</label>
                 <input type="text" id="linkLabel"><br>
                 <label for="linkRemarks">Remarks:</label>
                 <textarea id="linkRemarks"></textarea><br>
-                <button type="submit">Add Link</button>
+                <button type="submit">Save</button>
             </form>
         </div>
     </div>
+
     <div id="contextMenu" class="context-menu">
         <button id="editButton">Edit</button>
         <button id="deleteButton">Delete</button>
     </div>
-    <button id="saveButton">Save</button>
-    <button id="loadButton">Load</button>
+
+    <div id="tooltip" class="tooltip"></div>
+
+    <div id="status" class="status"></div>
+
     <script src="app.js"></script>
 </body>
 </html>
